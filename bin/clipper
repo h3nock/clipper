@@ -1,0 +1,249 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.1.0"
+
+usage() {
+  cat <<'EOF'
+Clipper - keyboard-first macOS capture CLI
+
+Usage:
+  clipper front [--output PATH] [--copy] [--quiet] [--json]
+  clipper help
+  clipper --help
+  clipper --version
+
+Commands:
+  front    Capture the currently focused yabai window.
+
+Options:
+  --output PATH   Save the capture to PATH.
+  --copy          Copy to clipboard when --output is also used.
+  --quiet         Suppress success output.
+  --json          Print machine-readable success/error output.
+  -h, --help      Show help.
+  --version       Show version.
+EOF
+}
+
+err() {
+  printf 'clipper: %s\n' "$*" >&2
+}
+
+json_bool() {
+  case "$1" in
+    true) printf 'true' ;;
+    *) printf 'false' ;;
+  esac
+}
+
+fail() {
+  local code="$1"
+  local message="$2"
+  local json="${3:-false}"
+
+  if [[ "$json" == "true" ]] && command -v jq >/dev/null 2>&1; then
+    jq -n --arg error "$message" '{ok: false, error: $error}'
+  else
+    err "$message"
+  fi
+
+  exit "$code"
+}
+
+need_cmd() {
+  local name="$1"
+  local json="$2"
+
+  if ! command -v "$name" >/dev/null 2>&1; then
+    fail 127 "$name is required but was not found on PATH." "$json"
+  fi
+}
+
+focused_window_json() {
+  local json="$1"
+  local window
+
+  if ! window="$(yabai -m query --windows --window 2>/dev/null)"; then
+    fail 1 "Could not query the focused window from yabai." "$json"
+  fi
+
+  if ! jq -e 'type == "object" and (.id | type == "number")' >/dev/null <<<"$window"; then
+    fail 1 "No focused yabai window found." "$json"
+  fi
+
+  printf '%s\n' "$window"
+}
+
+window_label() {
+  jq -r '
+    [.app // "Unknown", .title // ""]
+    | map(select(. != ""))
+    | join(" - ")
+  ' <<<"$1"
+}
+
+copy_png_to_clipboard() {
+  local path="$1"
+
+  osascript - "$path" <<'APPLESCRIPT' >/dev/null 2>&1
+on run argv
+  set imagePath to POSIX file (item 1 of argv)
+  set the clipboard to (read imagePath as «class PNGf»)
+end run
+APPLESCRIPT
+}
+
+emit_success() {
+  local json="$1"
+  local quiet="$2"
+  local mode="$3"
+  local target="$4"
+  local window_id="$5"
+  local copied="$6"
+  local output="$7"
+
+  if [[ "$json" == "true" ]]; then
+    jq -n \
+      --arg mode "$mode" \
+      --arg target "$target" \
+      --argjson window_id "$window_id" \
+      --argjson copied "$(json_bool "$copied")" \
+      --arg output "$output" \
+      '{
+        ok: true,
+        mode: $mode,
+        target: $target,
+        window_id: $window_id,
+        copied: $copied,
+        output: (if $output == "" then null else $output end)
+      }'
+    return
+  fi
+
+  if [[ "$quiet" == "true" ]]; then
+    return
+  fi
+
+  if [[ -n "$output" && "$copied" == "true" ]]; then
+    printf 'Saved and copied screenshot: %s -> %s\n' "$target" "$output"
+  elif [[ -n "$output" ]]; then
+    printf 'Saved screenshot: %s -> %s\n' "$target" "$output"
+  else
+    printf 'Copied screenshot: %s\n' "$target"
+  fi
+}
+
+capture_window() {
+  local window_id="$1"
+  local target="$2"
+  local output="$3"
+  local copy="$4"
+  local quiet="$5"
+  local json="$6"
+
+  if [[ -n "$output" ]]; then
+    local output_dir
+    local capture_error
+    output_dir="$(dirname "$output")"
+    if [[ ! -d "$output_dir" ]]; then
+      fail 1 "Output directory does not exist: $output_dir" "$json"
+    fi
+
+    if ! capture_error="$(screencapture -x -l"$window_id" "$output" 2>&1)"; then
+      fail 1 "Window capture failed. Check Screen Recording permission for your terminal." "$json"
+    fi
+
+    if [[ "$copy" == "true" ]]; then
+      need_cmd osascript "$json"
+      if ! copy_png_to_clipboard "$output"; then
+        fail 1 "Captured file but could not copy it to the clipboard." "$json"
+      fi
+    fi
+
+    emit_success "$json" "$quiet" "front" "$target" "$window_id" "$copy" "$output"
+    return
+  fi
+
+  local capture_error
+  if ! capture_error="$(screencapture -x -l"$window_id" -c 2>&1)"; then
+    fail 1 "Window capture failed. Check Screen Recording permission for your terminal." "$json"
+  fi
+
+  emit_success "$json" "$quiet" "front" "$target" "$window_id" true ""
+}
+
+cmd_front() {
+  local output=""
+  local copy=false
+  local quiet=false
+  local json=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --output)
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          fail 2 "--output requires a path." "$json"
+        fi
+        output="$2"
+        shift 2
+        ;;
+      --copy)
+        copy=true
+        shift
+        ;;
+      --quiet)
+        quiet=true
+        shift
+        ;;
+      --json)
+        json=true
+        shift
+        ;;
+      -h|--help)
+        usage
+        return
+        ;;
+      *)
+        fail 2 "Unknown option for front: $1" "$json"
+        ;;
+    esac
+  done
+
+  need_cmd jq "$json"
+  need_cmd yabai "$json"
+  need_cmd screencapture "$json"
+
+  local window
+  local window_id
+  local target
+  window="$(focused_window_json "$json")"
+  window_id="$(jq -r '.id' <<<"$window")"
+  target="$(window_label "$window")"
+
+  capture_window "$window_id" "$target" "$output" "$copy" "$quiet" "$json"
+}
+
+main() {
+  local command="${1:-help}"
+  if [[ $# -gt 0 ]]; then
+    shift
+  fi
+
+  case "$command" in
+    front)
+      cmd_front "$@"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    --version|version)
+      printf 'clipper %s\n' "$VERSION"
+      ;;
+    *)
+      fail 2 "Unknown command: $command" false
+      ;;
+  esac
+}
+
+main "$@"
