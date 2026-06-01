@@ -11,6 +11,7 @@ reaching for the mouse. The first slice supports focused-window capture through
 Implemented:
 
 - `clipper front`
+- `clipper window`
 - `clipper window --source yabai`
 - `clipper window --source system`
 - `--output PATH`
@@ -20,7 +21,6 @@ Implemented:
 
 Planned:
 
-- Combined `yabai` + native system window discovery
 - `clipper menu`
 
 ## Install Locally
@@ -60,10 +60,19 @@ clipper front --output ~/Desktop/window.png --copy
 Pick a yabai window with `fzf`:
 
 ```sh
+clipper window
+```
+
+This defaults to `--source auto`, which merges yabai-managed windows with
+native macOS windows and dedupes by window id.
+
+Use only yabai:
+
+```sh
 clipper window --source yabai
 ```
 
-Pick a native macOS window with `fzf`:
+Use only the native macOS window provider:
 
 ```sh
 clipper window --source system

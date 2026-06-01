@@ -44,4 +44,12 @@ fi
 grep -q 'Window picker requires an interactive terminal' /tmp/clipper-smoke-system-window.json
 rm -f /tmp/clipper-smoke-system-window.json
 
+if "$clipper" window --json >/tmp/clipper-smoke-auto-window.json 2>/dev/null; then
+  echo "non-interactive auto window picker should fail" >&2
+  rm -f /tmp/clipper-smoke-auto-window.json
+  exit 1
+fi
+grep -q 'Window picker requires an interactive terminal' /tmp/clipper-smoke-auto-window.json
+rm -f /tmp/clipper-smoke-auto-window.json
+
 echo "smoke tests passed"

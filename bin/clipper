@@ -26,7 +26,7 @@ Clipper - keyboard-first macOS capture CLI
 
 Usage:
   clipper front [--output PATH] [--copy] [--quiet] [--json]
-  clipper window [--source yabai|system] [--output PATH] [--copy] [--quiet] [--json]
+  clipper window [--source auto|yabai|system] [--output PATH] [--copy] [--quiet] [--json]
   clipper help
   clipper --help
   clipper --version
@@ -36,7 +36,7 @@ Commands:
   window   Pick a window with fzf and capture it.
 
 Options:
-  --source NAME   Window source for `window`. Currently `yabai` or `system`.
+  --source NAME   Window source for `window`. Default: `auto`.
   --output PATH   Save the capture to PATH.
   --copy          Copy to clipboard when --output is also used.
   --quiet         Suppress success output.
@@ -103,38 +103,77 @@ window_label() {
   ' <<<"$1"
 }
 
-yabai_window_rows() {
+yabai_window_records() {
   jq -r '
     map(select(."is-visible" == true and ."is-minimized" == false and ."is-hidden" == false))
-    | .[]
+    | map({
+        id,
+        app: (.app // "Unknown"),
+        title: (.title // ""),
+        pid: (.pid // 0),
+        space: (.space // null),
+        focused: (."has-focus" // null),
+        visible: (."is-visible" // true),
+        managed: (if ."is-floating" == true then false else true end),
+        layer: (.level // 0),
+        frame: {
+          x: (.frame.x // 0),
+          y: (.frame.y // 0),
+          w: (.frame.w // 0),
+          h: (.frame.h // 0)
+        },
+        sources: ["yabai"]
+      })
+  '
+}
+
+window_rows() {
+  jq -r '
+    .[]
     | [
         (.id | tostring),
         (
-          (if ."has-focus" == true then "*" else " " end)
+          (if .focused == true then "*" else " " end)
           + " [space "
           + ((.space // "-") | tostring)
           + "] "
           + (.app // "Unknown")
           + (if ((.title // "") == "") then "" else " - " + .title end)
+          + "  "
+          + ((.sources // []) | join("+"))
         )
       ]
     | @tsv
   '
 }
 
-system_window_rows() {
-  jq -r '
-    .[]
-    | [
-        (.id | tostring),
-        (
-          "  [-] "
-          + (.app // "Unknown")
-          + (if ((.title // "") == "") then "" else " - " + .title end)
-        )
-      ]
-    | @tsv
-  '
+merge_window_records() {
+  local yabai_records="$1"
+  local system_records="$2"
+
+  jq -n \
+    --argjson yabai "$yabai_records" \
+    --argjson system "$system_records" \
+    '
+      def merge_sources($a; $b):
+        ((($a.sources // []) + ($b.sources // [])) | unique);
+
+      reduce ($system + $yabai)[] as $window ({};
+        ($window.id | tostring) as $id
+        | .[$id] =
+          if has($id) then
+            if (($window.sources // []) | index("yabai")) then
+              (.[$id] + $window + {sources: merge_sources(.[$id]; $window)})
+            else
+              ($window + .[$id] + {sources: merge_sources(.[$id]; $window)})
+            end
+          else
+            $window
+          end
+      )
+      | [.[]]
+      | sort_by(.app, .title, .id)
+    '
 }
 
 copy_png_to_clipboard() {
@@ -281,7 +320,7 @@ cmd_front() {
 }
 
 cmd_window() {
-  local source="yabai"
+  local source="auto"
   local output=""
   local copy=false
   local quiet=false
@@ -325,7 +364,7 @@ cmd_window() {
     esac
   done
 
-  if [[ "$source" != "yabai" && "$source" != "system" ]]; then
+  if [[ "$source" != "auto" && "$source" != "yabai" && "$source" != "system" ]]; then
     fail 2 "Unsupported window source for this slice: $source" "$json"
   fi
 
@@ -337,20 +376,48 @@ cmd_window() {
   local rows
   if [[ "$source" == "yabai" ]]; then
     need_cmd yabai "$json"
+    local yabai_json
     if ! windows="$(yabai -m query --windows 2>/dev/null)"; then
       fail 1 "Could not query windows from yabai." "$json"
     fi
-    rows="$(yabai_window_rows <<<"$windows")"
+    yabai_json="$windows"
+    windows="$(yabai_window_records <<<"$yabai_json")"
   else
-    if [[ ! -x "$SYSTEM_WINDOWS_CMD" ]]; then
-      fail 1 "System window provider is not executable: $SYSTEM_WINDOWS_CMD" "$json"
+    if [[ "$source" == "system" ]]; then
+      if [[ ! -x "$SYSTEM_WINDOWS_CMD" ]]; then
+        fail 1 "System window provider is not executable: $SYSTEM_WINDOWS_CMD" "$json"
+      fi
+      if ! windows="$("$SYSTEM_WINDOWS_CMD" 2>/dev/null)"; then
+        fail 1 "Could not query windows from the system provider." "$json"
+      fi
+    else
+      local yabai_records="[]"
+      local system_records="[]"
+      local provider_count=0
+
+      if command -v yabai >/dev/null 2>&1; then
+        local yabai_json
+        if yabai_json="$(yabai -m query --windows 2>/dev/null)"; then
+          yabai_records="$(yabai_window_records <<<"$yabai_json")"
+          provider_count=$((provider_count + 1))
+        fi
+      fi
+
+      if [[ -x "$SYSTEM_WINDOWS_CMD" ]]; then
+        if system_records="$("$SYSTEM_WINDOWS_CMD" 2>/dev/null)"; then
+          provider_count=$((provider_count + 1))
+        fi
+      fi
+
+      if [[ "$provider_count" -eq 0 ]]; then
+        fail 1 "Could not query windows from yabai or the system provider." "$json"
+      fi
+
+      windows="$(merge_window_records "$yabai_records" "$system_records")"
     fi
-    if ! windows="$("$SYSTEM_WINDOWS_CMD" 2>/dev/null)"; then
-      fail 1 "Could not query windows from the system provider." "$json"
-    fi
-    rows="$(system_window_rows <<<"$windows")"
   fi
 
+  rows="$(window_rows <<<"$windows")"
   if [[ -z "$rows" ]]; then
     fail 1 "No visible windows found for source: $source" "$json"
   fi
