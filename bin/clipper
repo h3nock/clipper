@@ -9,14 +9,17 @@ Clipper - keyboard-first macOS capture CLI
 
 Usage:
   clipper front [--output PATH] [--copy] [--quiet] [--json]
+  clipper window [--source yabai] [--output PATH] [--copy] [--quiet] [--json]
   clipper help
   clipper --help
   clipper --version
 
 Commands:
   front    Capture the currently focused yabai window.
+  window   Pick a window with fzf and capture it.
 
 Options:
+  --source NAME   Window source for `window`. Currently only `yabai`.
   --output PATH   Save the capture to PATH.
   --copy          Copy to clipboard when --output is also used.
   --quiet         Suppress success output.
@@ -83,6 +86,25 @@ window_label() {
   ' <<<"$1"
 }
 
+yabai_window_rows() {
+  jq -r '
+    map(select(."is-visible" == true and ."is-minimized" == false and ."is-hidden" == false))
+    | .[]
+    | [
+        (.id | tostring),
+        (
+          (if ."has-focus" == true then "*" else " " end)
+          + " [space "
+          + ((.space // "-") | tostring)
+          + "] "
+          + (.app // "Unknown")
+          + (if ((.title // "") == "") then "" else " - " + .title end)
+        )
+      ]
+    | @tsv
+  '
+}
+
 copy_png_to_clipboard() {
   local path="$1"
 
@@ -135,6 +157,8 @@ emit_success() {
 }
 
 capture_window() {
+  local mode="$1"
+  shift
   local window_id="$1"
   local target="$2"
   local output="$3"
@@ -161,7 +185,7 @@ capture_window() {
       fi
     fi
 
-    emit_success "$json" "$quiet" "front" "$target" "$window_id" "$copy" "$output"
+    emit_success "$json" "$quiet" "$mode" "$target" "$window_id" "$copy" "$output"
     return
   fi
 
@@ -170,7 +194,7 @@ capture_window() {
     fail 1 "Window capture failed. Check Screen Recording permission for your terminal." "$json"
   fi
 
-  emit_success "$json" "$quiet" "front" "$target" "$window_id" true ""
+  emit_success "$json" "$quiet" "$mode" "$target" "$window_id" true ""
 }
 
 cmd_front() {
@@ -221,7 +245,94 @@ cmd_front() {
   window_id="$(jq -r '.id' <<<"$window")"
   target="$(window_label "$window")"
 
-  capture_window "$window_id" "$target" "$output" "$copy" "$quiet" "$json"
+  capture_window "front" "$window_id" "$target" "$output" "$copy" "$quiet" "$json"
+}
+
+cmd_window() {
+  local source="yabai"
+  local output=""
+  local copy=false
+  local quiet=false
+  local json=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --source)
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          fail 2 "--source requires a value." "$json"
+        fi
+        source="$2"
+        shift 2
+        ;;
+      --output)
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          fail 2 "--output requires a path." "$json"
+        fi
+        output="$2"
+        shift 2
+        ;;
+      --copy)
+        copy=true
+        shift
+        ;;
+      --quiet)
+        quiet=true
+        shift
+        ;;
+      --json)
+        json=true
+        shift
+        ;;
+      -h|--help)
+        usage
+        return
+        ;;
+      *)
+        fail 2 "Unknown option for window: $1" "$json"
+        ;;
+    esac
+  done
+
+  if [[ "$source" != "yabai" ]]; then
+    fail 2 "Unsupported window source for this slice: $source" "$json"
+  fi
+
+  need_cmd jq "$json"
+  need_cmd yabai "$json"
+  need_cmd fzf "$json"
+  need_cmd screencapture "$json"
+
+  local windows
+  if ! windows="$(yabai -m query --windows 2>/dev/null)"; then
+    fail 1 "Could not query windows from yabai." "$json"
+  fi
+
+  local rows
+  rows="$(yabai_window_rows <<<"$windows")"
+  if [[ -z "$rows" ]]; then
+    fail 1 "No visible yabai windows found." "$json"
+  fi
+
+  if [[ ! -t 1 ]]; then
+    fail 1 "Window picker requires an interactive terminal." "$json"
+  fi
+
+  local selected
+  if ! selected="$(printf '%s\n' "$rows" | fzf --delimiter=$'\t' --with-nth=2.. --prompt='window> ')"; then
+    if [[ "$json" == "true" ]]; then
+      jq -n '{ok: false, cancelled: true}'
+    fi
+    return 130
+  fi
+
+  local window_id
+  local selected_window
+  local target
+  window_id="$(cut -f1 <<<"$selected")"
+  selected_window="$(jq -c --argjson id "$window_id" 'map(select(.id == $id))[0]' <<<"$windows")"
+  target="$(window_label "$selected_window")"
+
+  capture_window "window" "$window_id" "$target" "$output" "$copy" "$quiet" "$json"
 }
 
 main() {
@@ -233,6 +344,9 @@ main() {
   case "$command" in
     front)
       cmd_front "$@"
+      ;;
+    window)
+      cmd_window "$@"
       ;;
     help|-h|--help)
       usage

@@ -11,6 +11,7 @@ reaching for the mouse. The first slice supports focused-window capture through
 Implemented:
 
 - `clipper front`
+- `clipper window --source yabai`
 - `--output PATH`
 - `--copy`
 - `--quiet`
@@ -18,7 +19,6 @@ Implemented:
 
 Planned:
 
-- `clipper window` with an `fzf` picker
 - Combined `yabai` + native system window discovery
 - `clipper sim` for booted Simulator screenshots
 - `clipper menu`
@@ -57,6 +57,12 @@ Save and copy:
 clipper front --output ~/Desktop/window.png --copy
 ```
 
+Pick a yabai window with `fzf`:
+
+```sh
+clipper window --source yabai
+```
+
 Machine-readable output:
 
 ```sh
@@ -68,7 +74,7 @@ clipper front --json
 - macOS
 - `yabai`
 - `jq`
+- `fzf`
 - `screencapture`
 
 Your terminal needs macOS Screen Recording permission for actual captures.
-
