@@ -1,0 +1,111 @@
+#!/usr/bin/env swift
+import CoreGraphics
+import Foundation
+
+struct Frame: Codable {
+    let x: Double
+    let y: Double
+    let w: Double
+    let h: Double
+}
+
+struct WindowRecord: Codable {
+    let id: Int
+    let app: String
+    let title: String
+    let pid: Int
+    let space: Int?
+    let focused: Bool?
+    let visible: Bool
+    let managed: Bool?
+    let layer: Int
+    let frame: Frame
+    let sources: [String]
+}
+
+func intValue(_ value: Any?) -> Int? {
+    if let number = value as? NSNumber {
+        return number.intValue
+    }
+    if let int = value as? Int {
+        return int
+    }
+    return nil
+}
+
+func doubleValue(_ value: Any?) -> Double? {
+    if let number = value as? NSNumber {
+        return number.doubleValue
+    }
+    if let double = value as? Double {
+        return double
+    }
+    if let int = value as? Int {
+        return Double(int)
+    }
+    return nil
+}
+
+func stringValue(_ value: Any?) -> String {
+    value as? String ?? ""
+}
+
+let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+let rawWindows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
+
+let records: [WindowRecord] = rawWindows.compactMap { window in
+    guard let id = intValue(window[kCGWindowNumber as String]) else {
+        return nil
+    }
+
+    let owner = stringValue(window[kCGWindowOwnerName as String])
+    if owner == "Window Server" {
+        return nil
+    }
+
+    let title = stringValue(window[kCGWindowName as String])
+    let pid = intValue(window[kCGWindowOwnerPID as String]) ?? 0
+    let layer = intValue(window[kCGWindowLayer as String]) ?? 0
+    let alpha = doubleValue(window[kCGWindowAlpha as String]) ?? 1
+
+    guard alpha > 0 else {
+        return nil
+    }
+
+    guard let bounds = window[kCGWindowBounds as String] as? [String: Any] else {
+        return nil
+    }
+
+    let x = doubleValue(bounds["X"]) ?? 0
+    let y = doubleValue(bounds["Y"]) ?? 0
+    let width = doubleValue(bounds["Width"]) ?? 0
+    let height = doubleValue(bounds["Height"]) ?? 0
+
+    guard width >= 20, height >= 20 else {
+        return nil
+    }
+
+    if layer != 0 && title.isEmpty {
+        return nil
+    }
+
+    return WindowRecord(
+        id: id,
+        app: owner.isEmpty ? "Unknown" : owner,
+        title: title,
+        pid: pid,
+        space: nil,
+        focused: nil,
+        visible: true,
+        managed: nil,
+        layer: layer,
+        frame: Frame(x: x, y: y, w: width, h: height),
+        sources: ["system"]
+    )
+}
+
+let encoder = JSONEncoder()
+encoder.outputFormatting = [.sortedKeys]
+let data = try encoder.encode(records)
+FileHandle.standardOutput.write(data)
+FileHandle.standardOutput.write(Data("\n".utf8))

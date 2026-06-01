@@ -3,13 +3,30 @@ set -euo pipefail
 
 VERSION="0.1.0"
 
+script_dir() {
+  local source="${BASH_SOURCE[0]}"
+  while [[ -L "$source" ]]; do
+    local dir
+    dir="$(cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd)"
+    source="$(readlink "$source")"
+    if [[ "$source" != /* ]]; then
+      source="$dir/$source"
+    fi
+  done
+  cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd
+}
+
+SCRIPT_DIR="$(script_dir)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
+SYSTEM_WINDOWS_CMD="$ROOT_DIR/libexec/clipper-system-windows"
+
 usage() {
   cat <<'EOF'
 Clipper - keyboard-first macOS capture CLI
 
 Usage:
   clipper front [--output PATH] [--copy] [--quiet] [--json]
-  clipper window [--source yabai] [--output PATH] [--copy] [--quiet] [--json]
+  clipper window [--source yabai|system] [--output PATH] [--copy] [--quiet] [--json]
   clipper help
   clipper --help
   clipper --version
@@ -19,7 +36,7 @@ Commands:
   window   Pick a window with fzf and capture it.
 
 Options:
-  --source NAME   Window source for `window`. Currently only `yabai`.
+  --source NAME   Window source for `window`. Currently `yabai` or `system`.
   --output PATH   Save the capture to PATH.
   --copy          Copy to clipboard when --output is also used.
   --quiet         Suppress success output.
@@ -97,6 +114,21 @@ yabai_window_rows() {
           + " [space "
           + ((.space // "-") | tostring)
           + "] "
+          + (.app // "Unknown")
+          + (if ((.title // "") == "") then "" else " - " + .title end)
+        )
+      ]
+    | @tsv
+  '
+}
+
+system_window_rows() {
+  jq -r '
+    .[]
+    | [
+        (.id | tostring),
+        (
+          "  [-] "
           + (.app // "Unknown")
           + (if ((.title // "") == "") then "" else " - " + .title end)
         )
@@ -293,24 +325,34 @@ cmd_window() {
     esac
   done
 
-  if [[ "$source" != "yabai" ]]; then
+  if [[ "$source" != "yabai" && "$source" != "system" ]]; then
     fail 2 "Unsupported window source for this slice: $source" "$json"
   fi
 
   need_cmd jq "$json"
-  need_cmd yabai "$json"
   need_cmd fzf "$json"
   need_cmd screencapture "$json"
 
   local windows
-  if ! windows="$(yabai -m query --windows 2>/dev/null)"; then
-    fail 1 "Could not query windows from yabai." "$json"
+  local rows
+  if [[ "$source" == "yabai" ]]; then
+    need_cmd yabai "$json"
+    if ! windows="$(yabai -m query --windows 2>/dev/null)"; then
+      fail 1 "Could not query windows from yabai." "$json"
+    fi
+    rows="$(yabai_window_rows <<<"$windows")"
+  else
+    if [[ ! -x "$SYSTEM_WINDOWS_CMD" ]]; then
+      fail 1 "System window provider is not executable: $SYSTEM_WINDOWS_CMD" "$json"
+    fi
+    if ! windows="$("$SYSTEM_WINDOWS_CMD" 2>/dev/null)"; then
+      fail 1 "Could not query windows from the system provider." "$json"
+    fi
+    rows="$(system_window_rows <<<"$windows")"
   fi
 
-  local rows
-  rows="$(yabai_window_rows <<<"$windows")"
   if [[ -z "$rows" ]]; then
-    fail 1 "No visible yabai windows found." "$json"
+    fail 1 "No visible windows found for source: $source" "$json"
   fi
 
   if [[ ! -t 1 ]]; then

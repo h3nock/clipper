@@ -12,6 +12,7 @@ Implemented:
 
 - `clipper front`
 - `clipper window --source yabai`
+- `clipper window --source system`
 - `--output PATH`
 - `--copy`
 - `--quiet`
@@ -20,7 +21,6 @@ Implemented:
 Planned:
 
 - Combined `yabai` + native system window discovery
-- `clipper sim` for booted Simulator screenshots
 - `clipper menu`
 
 ## Install Locally
@@ -63,6 +63,12 @@ Pick a yabai window with `fzf`:
 clipper window --source yabai
 ```
 
+Pick a native macOS window with `fzf`:
+
+```sh
+clipper window --source system
+```
+
 Machine-readable output:
 
 ```sh
@@ -76,5 +82,6 @@ clipper front --json
 - `jq`
 - `fzf`
 - `screencapture`
+- Swift toolchain for the native system window provider
 
 Your terminal needs macOS Screen Recording permission for actual captures.
