@@ -2,18 +2,18 @@
 
 Keyboard-first macOS screenshots for developer workflows.
 
-Clipper is a small CLI for capturing the UI target you care about without
-reaching for the mouse. The first slice supports focused-window capture through
-`yabai` and macOS `screencapture`.
+Clipper is a small native CLI for capturing the UI target you care about without
+reaching for the mouse. It lists macOS windows with CoreGraphics, lets you pick
+with `fzf`, and captures by window ID with macOS `screencapture`.
 
 ## Status
 
 Implemented:
 
-- `clipper front`
-- `clipper window`
-- `clipper window --source yabai`
-- `clipper window --source system`
+- `clipper`
+- `clipper pick`
+- `clipper current`
+- `clipper doctor`
 - `--output PATH`
 - `--copy`
 - `--quiet`
@@ -21,76 +21,69 @@ Implemented:
 
 Planned:
 
-- `clipper menu`
+- visual window slots
 
 ## Install Locally
 
 From the repo:
 
 ```sh
-./bin/clipper --help
+swift build -c release
+install -m 0755 .build/release/clipper ~/.local/bin/clipper
 ```
 
-Optionally put it on your `PATH`:
-
-```sh
-ln -s "$PWD/bin/clipper" /usr/local/bin/clipper
-```
+The installed binary is standalone at runtime. It does not shell out to
+`winpick` or depend on `winpick`.
 
 ## Usage
 
-Capture the focused window to the clipboard:
+Pick a window with `fzf` and copy its screenshot to the clipboard:
 
 ```sh
-clipper front
+clipper
 ```
 
-Save the focused window to a file:
+This captures by macOS window ID and does not move focus.
+
+Capture the currently focused window to the clipboard:
 
 ```sh
-clipper front --output ~/Desktop/window.png
+clipper current
+```
+
+This is most useful from a global hotkey. If you type it in a terminal, the
+terminal is the focused window.
+
+Save a picked window to a file:
+
+```sh
+clipper pick --output ~/Desktop/window.png
 ```
 
 Save and copy:
 
 ```sh
-clipper front --output ~/Desktop/window.png --copy
+clipper pick --output ~/Desktop/window.png --copy
 ```
 
-Pick a yabai window with `fzf`:
+Check setup:
 
 ```sh
-clipper window
+clipper doctor
 ```
 
-This defaults to `--source auto`, which merges yabai-managed windows with
-native macOS windows and dedupes by window id.
-
-Use only yabai:
+Machine-readable success/error output:
 
 ```sh
-clipper window --source yabai
-```
-
-Use only the native macOS window provider:
-
-```sh
-clipper window --source system
-```
-
-Machine-readable output:
-
-```sh
-clipper front --json
+clipper pick --json
 ```
 
 ## Requirements
 
 - macOS
-- `yabai`
-- `jq`
-- `fzf`
 - `screencapture`
-- Swift toolchain for the native system window provider
+- `fzf` for `clipper pick`
+- `yabai` is optional; when present, Clipper uses it only for Space labels
+- Swift toolchain for local builds
 
-Your terminal needs macOS Screen Recording permission for actual captures.
+Captures need Screen Recording permission for the host app.
