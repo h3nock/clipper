@@ -23,9 +23,15 @@ Planned:
 
 - visual window slots
 
-## Install Locally
+## Install
 
-From the repo:
+After a release is published to the Homebrew tap:
+
+```sh
+brew install h3nock/tap/clipper
+```
+
+From source:
 
 ```sh
 swift build -c release
@@ -80,7 +86,7 @@ clipper pick --json
 
 ## Requirements
 
-- macOS
+- macOS 14 or newer
 - `screencapture`
 - `fzf` for `clipper pick`
 - `yabai` is optional; when present, Clipper uses it only for Space labels

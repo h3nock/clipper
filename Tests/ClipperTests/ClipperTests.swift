@@ -30,6 +30,10 @@ import Testing
     #expect(parsed.arguments == ["--json"])
 }
 
+@Test func versionOutputUsesReleaseVersion() {
+    #expect(ClipperCore.CLI.versionOutput == "clipper \(ClipperVersion.current)")
+}
+
 @Test func pickUsesCaptureTargetsWithoutFocusingContract() {
     let picker = RecordingPicker()
     let cli = testCLI(picker: picker)

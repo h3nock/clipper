@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  swift:
+    # Package.swift uses Swift tools 6.3. The macos-26 image provides Xcode 26.x
+    # by default; the package still builds with a macOS 14 deployment target.
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build release product
+        run: swift build --configuration release --product clipper

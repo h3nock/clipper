@@ -52,7 +52,7 @@ public struct CLI {
         case "help", "-h", "--help":
             print(Self.help)
         case "version", "--version":
-            print("clipper 0.1.0")
+            print(Self.versionOutput)
         default:
             throw ClipperError.invalidArguments("Unknown command: \(command)")
         }
@@ -216,6 +216,10 @@ public struct CLI {
         }
 
         return ("pick", args)
+    }
+
+    static var versionOutput: String {
+        "clipper \(ClipperVersion.current)"
     }
 
     public static let help = """
