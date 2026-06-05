@@ -6,26 +6,9 @@ Clipper is a small native CLI for capturing the UI target you care about without
 reaching for the mouse. It lists macOS windows with CoreGraphics, lets you pick
 with `fzf`, and captures by window ID with macOS `screencapture`.
 
-## Status
-
-Implemented:
-
-- `clipper`
-- `clipper pick`
-- `clipper current`
-- `clipper doctor`
-- `--output PATH`
-- `--copy`
-- `--quiet`
-- `--json`
-
-Planned:
-
-- visual window slots
-
 ## Install
 
-After a release is published to the Homebrew tap:
+Install with Homebrew:
 
 ```sh
 brew install h3nock/tap/clipper
@@ -37,9 +20,6 @@ From source:
 swift build -c release
 install -m 0755 .build/release/clipper ~/.local/bin/clipper
 ```
-
-The installed binary is standalone at runtime. It does not shell out to
-`winpick` or depend on `winpick`.
 
 ## Usage
 
