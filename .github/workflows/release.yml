@@ -73,6 +73,7 @@ jobs:
 
       - name: Validate Homebrew formula from local archive
         env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         shell: bash
         run: |
