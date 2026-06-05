@@ -140,6 +140,7 @@ jobs:
           tap_dir="$(mktemp -d)"
           branch="clipper-v${VERSION}-${GITHUB_RUN_ID}"
 
+          gh auth setup-git
           gh repo clone "$TAP_REPOSITORY" "$tap_dir"
           cd "$tap_dir"
           git config user.name "github-actions[bot]"
