@@ -72,4 +72,5 @@ clipper pick --json
 - `yabai` is optional; when present, Clipper uses it only for Space labels
 - Swift toolchain for local builds
 
-Captures need Screen Recording permission for the host app.
+macOS Screen Recording permission is required for the app that launches
+`clipper`, such as your terminal or hotkey app.
